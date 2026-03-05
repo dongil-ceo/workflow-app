@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorkFlow — 팀 관리 시스템</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f13; --surface: #18181f; --surface2: #22222c; --surface3: #2a2a38;
+    --accent: #6c63ff; --accent2: #ff6584; --accent3: #43e97b; --accent4: #f7971e;
+    --text: #f0f0f8; --text2: #9999bb; --text3: #555577;
+    --border: #2e2e42; --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  #loadingScreen {
+    position: fixed; inset: 0; z-index: 999; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  }
+  .spinner { width: 40px; height: 40px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loginScreen {
+    min-height: 100vh; display: none; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 30% 40%, #1a1040 0%, #0f0f13 60%);
+    position: relative; overflow: hidden;
+  }
+  #loginScreen.show { display: flex; }
+  #loginScreen::before {
+    content: ''; position: absolute; width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(108,99,255,0.12) 0%, transparent 70%);
+    top: -100px; left: -100px; animation: pulse 6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.15);} }
+  @keyframes slideUp { from{opacity:0;transform:translateY(24px);} to{opacity:1;transform:translateY(0);} }
+
+  .loginCard {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 24px;
+    padding: 48px 40px; width: 100%; max-width: 420px;
+    position: relative; z-index: 1; box-shadow: 0 8px 64px rgba(0,0,0,0.6); animation: slideUp 0.5s ease;
+  }
+  .loginLogo { font-family: 'Space Mono', monospace; font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .loginLogo span { color: var(--accent2); }
+  .loginSub { color: var(--text2); font-size: 14px; margin-bottom: 36px; }
+  .formGroup { margin-bottom: 18px; }
+  .formGroup label { display: block; font-size: 12px; font-weight: 700; color: var(--text2); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .formGroup input, .formGroup select {
+    width: 100%; background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; color: var(--text);
+    font-size: 15px; font-family: inherit; outline: none; transition: border-color 0.2s;
+  }
+  .formGroup input:focus, .formGroup select:focus { border-color: var(--accent); }
+  .formGroup select option { background: var(--surface2); }
+  .btnPrimary {
+    width: 100%; background: var(--accent); color: #fff; border: none;
+    border-radius: 10px; padding: 14px; font-size: 15px; font-weight: 700;
+    font-family: inherit; cursor: pointer; transition: all 0.2s; margin-top: 8px;
+  }
+  .btnPrimary:hover { opacity: 0.88; transform: translateY(-1px); }
+  .loginHint { font-size: 12px; color: var(--text3); margin-top: 20px; text-align: center; line-height: 1.7; }
+
+  #app { display: none; min-height: 100vh; }
+  #app.show { display: block; }
+
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(15,15,19,0.92); backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border); height: 60px;
+    display: flex; align-items: center; padding: 0 20px; gap: 16px;
+  }
+  .topbarLogo { font-family: 'Space Mono', monospace; font-size: 18px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+  .topbarLogo span { color: var(--accent2); }
+  .topbarSpacer { flex: 1; }
+  .topbarUser { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text2); }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .badgeRole { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; }
+  .badgeRole.admin { background: rgba(108,99,255,0.2); color: var(--accent); }
+  .badgeRole.employee { background: rgba(67,233,123,0.15); color: var(--accent3); }
+  .btnLogout { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text2); padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.2s; }
+  .btnLogout:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  .tabBar { position: fixed; top: 60px; left: 0; right: 0; z-index: 99; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; overflow-x: auto; padding: 0 20px; scrollbar-width: none; }
+  .tabBar::-webkit-scrollbar { display: none; }
+  .tabBtn { flex-shrink: 0; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 14px 20px; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; transition: all 0.2s; }
+  .tabBtn:hover { color: var(--text); }
+  .tabBtn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .mainContent { padding: 130px 20px 40px; max-width: 1100px; margin: 0 auto; }
+  .panel { display: none; animation: fadeIn 0.3s ease; }
+  .panel.active { display: block; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 16px; }
+  .cardTitle { font-size: 13px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+  .cardTitle .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .statGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .statCard { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .statLabel { font-size: 11px; color: var(--text3); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .statValue { font-family: 'Space Mono', monospace; font-size: 26px; font-weight: 700; }
+
+  .clockDisplay { text-align: center; padding: 32px 0; }
+  .clockTime { font-family: 'Space Mono', monospace; font-size: 52px; font-weight: 700; letter-spacing: -2px; line-height: 1; margin-bottom: 6px; }
+  .clockDate { font-size: 14px; color: var(--text2); margin-bottom: 28px; }
+  .clockBtns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btnIn { background: linear-gradient(135deg, #43e97b, #38f9d7); color: #0a1a12; border: none; border-radius: 12px; padding: 14px 32px; font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.2s; }
+  .btnIn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(67,233,123,0.3); }
+  .btnOut { background: linear-gradient(135deg, #ff6584, #ff8c00); color: #fff; border: none; border-radius: 12px; padding: 14px 32px; font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.2s; }
+  .btnOut:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(255,101,132,0.3); }
+
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th { text-align: left; padding: 10px 14px; color: var(--text3); font-weight: 700; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  .table td { padding: 12px 14px; border-bottom: 1px solid rgba(46,46,66,0.5); vertical-align: middle; }
+  .table tr:last-child td { border-bottom: none; }
+  .table tr:hover td { background: rgba(108,99,255,0.04); }
+
+  .statusBadge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .statusBadge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .status-active { background: rgba(67,233,123,0.15); color: #43e97b; }
+  .status-done { background: rgba(108,99,255,0.15); color: var(--accent); }
+  .status-away { background: rgba(255,101,132,0.15); color: var(--accent2); }
+
+  .taskList { display: flex; flex-direction: column; gap: 10px; }
+  .taskItem { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; align-items: flex-start; gap: 14px; transition: border-color 0.2s; }
+  .taskItem:hover { border-color: var(--accent); }
+  .taskCheck { width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--border); flex-shrink: 0; cursor: pointer; margin-top: 1px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+  .taskCheck.checked { background: var(--accent3); border-color: var(--accent3); }
+  .taskCheck.checked::after { content: '✓'; color: #0a1a12; font-size: 12px; font-weight: 900; }
+  .taskInfo { flex: 1; }
+  .taskTitle { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  .taskMeta { font-size: 12px; color: var(--text2); display: flex; gap: 10px; flex-wrap: wrap; }
+  .taskPriority { font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 2px 8px; border-radius: 20px; }
+  .priority-high { background: rgba(255,101,132,0.15); color: var(--accent2); }
+  .priority-mid { background: rgba(247,151,30,0.15); color: var(--accent4); }
+  .priority-low { background: rgba(108,99,255,0.15); color: var(--accent); }
+
+  .formRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 500px) { .formRow { grid-template-columns: 1fr; } }
+  .inlineGroup { margin-bottom: 14px; }
+  .inlineGroup label { display: block; font-size: 11px; font-weight: 700; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .inlineGroup input, .inlineGroup select, .inlineGroup textarea { width: 100%; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; resize: vertical; }
+  .inlineGroup input:focus, .inlineGroup select:focus, .inlineGroup textarea:focus { border-color: var(--accent); }
+  .inlineGroup select option { background: var(--surface2); }
+
+  .btnAccent { background: var(--accent); border: none; color: #fff; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.2s; }
+  .btnAccent:hover { opacity: 0.85; }
+
+  .fileZone { border: 2px dashed var(--border); border-radius: 14px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface2); display: block; }
+  .fileZone:hover, .fileZone.dragover { border-color: var(--accent); background: rgba(108,99,255,0.06); }
+  .fileZone input { display: none; }
+  .fileZoneText { font-size: 14px; color: var(--text2); }
+  .fileZoneText b { color: var(--accent); }
+
+  .fileList { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .fileItem { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+  .fileItemIcon { font-size: 20px; }
+  .fileItemInfo { flex: 1; }
+  .fileItemName { font-size: 13px; font-weight: 500; }
+  .fileItemMeta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .fileItemDel { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 4px; transition: color 0.2s; }
+  .fileItemDel:hover { color: var(--accent2); }
+
+  .empGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .empCard { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 20px; text-align: center; transition: all 0.2s; position: relative; }
+  .empCard:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .empAvatar { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: #fff; margin: 0 auto 10px; }
+  .empName { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .empPos { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+  .empOnline { position: absolute; top: 14px; right: 14px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--surface2); }
+  .online { background: var(--accent3); }
+  .offline { background: var(--text3); }
+
+  .notice { background: rgba(108,99,255,0.08); border: 1px solid rgba(108,99,255,0.25); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--text2); margin-bottom: 12px; }
+  .sectionHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  .sectionTitle { font-size: 16px; font-weight: 700; }
+  .pill { display: inline-flex; align-items: center; background: var(--surface3); border-radius: 20px; padding: 4px 12px; font-size: 12px; color: var(--text2); font-weight: 500; }
+
+  #toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--surface3); border: 1px solid var(--border); color: var(--text); padding: 12px 24px; border-radius: 40px; font-size: 14px; font-weight: 500; z-index: 9999; transition: transform 0.3s, opacity 0.3s; opacity: 0; white-space: nowrap; box-shadow: 0 4px 32px rgba(0,0,0,0.5); }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 600px) {
+    .clockTime { font-size: 36px; }
+    .mainContent { padding: 125px 14px 40px; }
+    .card { padding: 18px; }
+    .loginCard { padding: 32px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loadingScreen">
+  <div style="font-family:'Space Mono',monospace;font-size:24px;font-weight:700;color:#6c63ff">Work<span style="color:#ff6584">Flow</span></div>
+  <div class="spinner"></div>
+  <div style="font-size:14px;color:#9999bb">Firebase 연결 중...</div>
+</div>
+
+<div id="loginScreen">
+  <div class="loginCard">
+    <div class="loginLogo">Work<span>Flow</span></div>
+    <div class="loginSub">팀 출퇴근 · 업무 · 파일 관리 시스템</div>
+    <div class="formGroup">
+      <label>직원 선택</label>
+      <select id="loginUser">
+        <option value="">-- 선택해주세요 --</option>
+        <option value="admin">👑 관리자 (Admin)</option>
+        <option value="뉴연탄빈">뉴연탄빈</option>
+        <option value="박항서1">박항서1</option>
+        <option value="박항서2">박항서2</option>
+        <option value="(구) 사장님">(구) 사장님</option>
+        
+        
+        
+      </select>
+    </div>
+    <div class="formGroup">
+      <label>PIN 번호</label>
+      <input type="password" id="loginPin" placeholder="직원: 1234 / 관리자: 0000" maxlength="4">
+    </div>
+    <button class="btnPrimary" id="loginBtn">로그인</button>
+    <div class="loginHint">직원 PIN: 1234 &nbsp;|&nbsp; 관리자 PIN: 0000</div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="topbarLogo">Work<span>Flow</span></div>
+    <div class="topbarSpacer"></div>
+    <div class="topbarUser">
+      <div class="avatar" id="topAvatar">?</div>
+      <div>
+        <div style="font-weight:600;font-size:13px;" id="topName">-</div>
+        <span class="badgeRole" id="topRole">-</span>
+      </div>
+    </div>
+    <button class="btnLogout" id="logoutBtn">로그아웃</button>
+  </div>
+  <div class="tabBar" id="tabBar"></div>
+  <div class="mainContent">
+
+    <div class="panel" id="panel-attendance">
+      <div class="card">
+        <div class="clockDisplay">
+          <div class="clockTime" id="clockTime">00:00:00</div>
+          <div class="clockDate" id="clockDate">-</div>
+          <div class="clockBtns">
+            <button class="btnIn" id="btnCheckIn">🟢 출근 체크</button>
+            <button class="btnOut" id="btnCheckOut">🔴 퇴근 체크</button>
+          </div>
+        </div>
+        <div id="myAttendStatus" class="notice" style="text-align:center;display:none;"></div>
+      </div>
+      <div class="card">
+        <div class="cardTitle"><div class="dot" style="background:#43e97b"></div>나의 출퇴근 기록</div>
+        <table class="table">
+          <thead><tr><th>날짜</th><th>출근</th><th>퇴근</th><th>상태</th></tr></thead>
+          <tbody id="myAttendTable"><tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text3)">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="card" id="adminAttendCard" style="display:none;">
+        <div class="cardTitle"><div class="dot" style="background:#6c63ff"></div>전체 직원 출퇴근 현황 (오늘)</div>
+        <table class="table">
+          <thead><tr><th>직원</th><th>출근</th><th>퇴근</th><th>상태</th></tr></thead>
+          <tbody id="allAttendTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-tasks">
+      <div id="adminTaskForm" style="display:none;">
+        <div class="card">
+          <div class="cardTitle"><div class="dot" style="background:#f7971e"></div>새 업무 배정</div>
+          <div class="formRow">
+            <div class="inlineGroup">
+              <label>담당 직원</label>
+              <select id="taskAssignTo">
+                <option value="전체">전체 공지</option>
+                <option value="뉴연탄빈">뉴연탄빈</option>
+                <option value="박항서1">박항서1</option>
+                <option value="박항서2">박항서2</option>
+                <option value="(구) 사장님">(구) 사장님</option>
+                
+                
+                
+              </select>
+            </div>
+            <div class="inlineGroup">
+              <label>우선순위</label>
+              <select id="taskPriority">
+                <option value="high">🔴 높음</option>
+                <option value="mid">🟡 보통</option>
+                <option value="low">🔵 낮음</option>
+              </select>
+            </div>
+          </div>
+          <div class="inlineGroup"><label>업무 제목</label><input type="text" id="taskTitle" placeholder="ex) 3층 배관 도면 검토"></div>
+          <div class="inlineGroup"><label>업무 내용</label><textarea id="taskDesc" rows="3" placeholder="상세 내용을 입력하세요"></textarea></div>
+          <div class="inlineGroup"><label>마감일</label><input type="date" id="taskDue"></div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btnAccent" id="btnAddTask">업무 배정</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sectionHeader">
+          <div class="sectionTitle" id="taskListTitle">내 업무 목록</div>
+          <div class="pill" id="taskCount">0건</div>
+        </div>
+        <div class="taskList" id="taskList"><div style="text-align:center;padding:40px;color:var(--text3)">로딩 중...</div></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-files">
+      <div class="card" id="fileUploadCard" style="display:none;">
+        <div class="cardTitle"><div class="dot" style="background:#ff6584"></div>도면 / 파일 등록</div>
+        <div class="formRow">
+          <div class="inlineGroup">
+            <label>관련 직원</label>
+            <select id="fileAssignTo">
+              <option value="전체">전체 공유</option>
+              <option value="뉴연탄빈">뉴연탄빈</option>
+              <option value="박항서1">박항서1</option>
+              <option value="박항서2">박항서2</option>
+              <option value="(구) 사장님">(구) 사장님</option>
+              
+              
+              
+            </select>
+          </div>
+          <div class="inlineGroup">
+            <label>카테고리</label>
+            <select id="fileCategory">
+              <option value="도면">📐 도면</option>
+              <option value="사진">📷 현장사진</option>
+              <option value="문서">📄 문서</option>
+              <option value="기타">📦 기타</option>
+            </select>
+          </div>
+        </div>
+        <div class="inlineGroup"><label>파일명 / 설명</label><input type="text" id="fileName" placeholder="ex) 2층 전기 배선 도면 v2.dwg"></div>
+        <div class="inlineGroup"><label>메모</label><textarea id="fileDesc" rows="2" placeholder="추가 메모 (선택사항)"></textarea></div>
+        <div style="display:flex;justify-content:flex-end;">
+          <button class="btnAccent" id="btnUploadFile">등록</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text3)">※ 실제 파일 저장은 별도 스토리지 연동 필요. 현재는 파일 정보(이름, 메모)를 등록합니다.</div>
+      </div>
+      <div class="card">
+        <div class="sectionHeader">
+          <div class="sectionTitle">파일 보관함</div>
+          <select id="fileFilter" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:12px;font-family:inherit;outline:none;">
+            <option value="all">전체</option>
+            <option value="도면">📐 도면</option>
+            <option value="사진">📷 현장사진</option>
+            <option value="문서">📄 문서</option>
+            <option value="기타">📦 기타</option>
+          </select>
+        </div>
+        <div class="fileList" id="fileListDisplay"><div style="text-align:center;padding:40px;color:var(--text3)">로딩 중...</div></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-employees">
+      <div class="statGrid" id="dashStats"></div>
+      <div class="card">
+        <div class="cardTitle"><div class="dot" style="background:#43e97b"></div>직원 현황</div>
+        <div class="empGrid" id="empGrid"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, getDoc,
+  onSnapshot, addDoc, updateDoc, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBey6TzAaWb0MdAy4d0qdL21wi_5AKFZVI",
+  authDomain: "employee-63be8.firebaseapp.com",
+  projectId: "employee-63be8",
+  storageBucket: "employee-63be8.firebasestorage.app",
+  messagingSenderId: "327347341269",
+  appId: "1:327347341269:web:de2c06a4f65efa14b01f5c"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+let currentUser = null, isAdmin = false;
+let tasksCache = [], filesCache = [], attendCache = {};
+let unsubTasks = null, unsubFiles = null, unsubAttend = null;
+
+const employees = [
+  {name:'뉴연탄빈', pos:'직원', color:'#6c63ff'},
+  {name:'박항서1', pos:'직원', color:'#ff6584'},
+  {name:'박항서2', pos:'직원', color:'#43e97b'},
+  {name:'(구) 사장님', pos:'직원', color:'#f7971e'},
+];
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockTime').textContent =
+    [now.getHours(), now.getMinutes(), now.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const days = ['일','월','화','수','목','금','토'];
+  document.getElementById('clockDate').textContent =
+    `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+function getFileIcon(name='') {
+  const ext = name.split('.').pop().toLowerCase();
+  if (['jpg','jpeg','png','gif','webp'].includes(ext)) return '🖼️';
+  if (ext==='pdf') return '📄';
+  if (['dwg','dxf','cad'].includes(ext)) return '📐';
+  if (['xlsx','xls','csv'].includes(ext)) return '📊';
+  if (['docx','doc','txt'].includes(ext)) return '📝';
+  if (['zip','rar','7z'].includes(ext)) return '📦';
+  return '📎';
+}
+
+// Loading
+setTimeout(() => {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('loginScreen').classList.add('show');
+}, 1000);
+
+// Login
+document.getElementById('loginBtn').addEventListener('click', login);
+document.getElementById('loginPin').addEventListener('keydown', e => { if(e.key==='Enter') login(); });
+
+function login() {
+  const user = document.getElementById('loginUser').value;
+  const pin = document.getElementById('loginPin').value;
+  if (!user) { toast('직원을 선택해주세요'); return; }
+  if (user === 'admin' && pin !== '0000') { toast('관리자 PIN이 틀렸습니다'); return; }
+  if (user !== 'admin' && pin !== '1234') { toast('PIN이 틀렸습니다'); return; }
+
+  currentUser = user === 'admin' ? '관리자' : user;
+  isAdmin = user === 'admin';
+
+  document.getElementById('loginScreen').classList.remove('show');
+  document.getElementById('app').classList.add('show');
+  document.getElementById('topAvatar').textContent = currentUser === '관리자' ? '관' : currentUser[0];
+  document.getElementById('topName').textContent = currentUser;
+  const roleEl = document.getElementById('topRole');
+  roleEl.textContent = isAdmin ? '관리자' : '직원';
+  roleEl.className = 'badgeRole ' + (isAdmin ? 'admin' : 'employee');
+
+  buildTabs();
+  startListeners();
+  switchTab('attendance');
+}
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  if (unsubTasks) unsubTasks();
+  if (unsubFiles) unsubFiles();
+  if (unsubAttend) unsubAttend();
+  currentUser = null; isAdmin = false;
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('loginScreen').classList.add('show');
+  document.getElementById('loginPin').value = '';
+  document.getElementById('loginUser').value = '';
+});
+
+function buildTabs() {
+  const tabs = [{id:'attendance',label:'⏰ 출퇴근'},{id:'tasks',label:'📋 업무'},{id:'files',label:'📁 파일/도면'}];
+  if (isAdmin) tabs.push({id:'employees',label:'👥 직원 현황'});
+  document.getElementById('tabBar').innerHTML = tabs.map(t =>
+    `<button class="tabBtn" id="tab-${t.id}" data-tab="${t.id}">${t.label}</button>`
+  ).join('');
+  document.querySelectorAll('.tabBtn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+}
+
+function switchTab(id) {
+  document.querySelectorAll('.tabBtn').forEach(b => b.classList.toggle('active', b.dataset.tab===id));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id==='panel-'+id));
+  if (id==='files') renderFilesPanel();
+  if (id==='employees') renderEmployees();
+}
+
+function startListeners() {
+  // Tasks realtime
+  if (unsubTasks) unsubTasks();
+  unsubTasks = onSnapshot(query(collection(db,'tasks'), orderBy('createdAt','desc')), snap => {
+    tasksCache = snap.docs.map(d => ({id:d.id,...d.data()}));
+    renderTasks();
+    if (isAdmin) renderEmployees();
+  });
+  // Files realtime
+  if (unsubFiles) unsubFiles();
+  unsubFiles = onSnapshot(query(collection(db,'files'), orderBy('createdAt','desc')), snap => {
+    filesCache = snap.docs.map(d => ({id:d.id,...d.data()}));
+    renderFiles();
+  });
+  // Attendance realtime
+  if (unsubAttend) unsubAttend();
+  unsubAttend = onSnapshot(collection(db,'attendance'), snap => {
+    attendCache = {};
+    snap.docs.forEach(d => { attendCache[d.id] = d.data(); });
+    renderAttendance();
+    if (isAdmin) renderEmployees();
+  });
+}
+
+// Attendance
+document.getElementById('btnCheckIn').addEventListener('click', async () => {
+  const td = today();
+  const ref = doc(db,'attendance',currentUser);
+  const snap = await getDoc(ref);
+  const data = snap.exists() ? snap.data() : {};
+  if (data[td]?.in) { toast('이미 출근 체크하셨습니다'); return; }
+  await setDoc(ref, {[td]: {in: nowTime()}}, {merge:true});
+  toast('✅ 출근 체크 완료!');
+});
+
+document.getElementById('btnCheckOut').addEventListener('click', async () => {
+  const td = today();
+  const ref = doc(db,'attendance',currentUser);
+  const snap = await getDoc(ref);
+  const data = snap.exists() ? snap.data() : {};
+  if (!data[td]?.in) { toast('먼저 출근 체크를 해주세요'); return; }
+  if (data[td]?.out) { toast('이미 퇴근 체크하셨습니다'); return; }
+  await setDoc(ref, {[td]: {...data[td], out: nowTime()}}, {merge:true});
+  toast('👋 퇴근 체크 완료!');
+});
+
+function renderAttendance() {
+  if (!currentUser) return;
+  const td = today();
+  const myData = attendCache[currentUser] || {};
+  const myRec = myData[td];
+  const statusEl = document.getElementById('myAttendStatus');
+  if (myRec?.in) {
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = myRec.out
+      ? `🏁 오늘 출근 <b>${myRec.in}</b> / 퇴근 <b>${myRec.out}</b>`
+      : `✅ 출근 <b>${myRec.in}</b> — 퇴근 미체크`;
+  } else { statusEl.style.display = 'none'; }
+
+  const rows = Object.keys(myData).sort().reverse().slice(0,14).map(d => {
+    const r = myData[d];
+    const st = r?.out ? `<span class="statusBadge status-done">퇴근완료</span>`
+      : r?.in ? `<span class="statusBadge status-active">근무중</span>`
+      : `<span class="statusBadge status-away">미체크</span>`;
+    return `<tr><td>${d}</td><td>${r?.in||'-'}</td><td>${r?.out||'-'}</td><td>${st}</td></tr>`;
+  }).join('');
+  document.getElementById('myAttendTable').innerHTML = rows ||
+    '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">기록 없음</td></tr>';
+
+  if (isAdmin) {
+    document.getElementById('adminAttendCard').style.display = 'block';
+    document.getElementById('allAttendTable').innerHTML = employees.map(emp => {
+      const rec = attendCache[emp.name]?.[td];
+      const st = rec?.out ? `<span class="statusBadge status-done">퇴근완료</span>`
+        : rec?.in ? `<span class="statusBadge status-active">근무중</span>`
+        : `<span class="statusBadge status-away">미출근</span>`;
+      return `<tr><td><b>${emp.name}</b><br><span style="font-size:11px;color:var(--text3)">${emp.pos}</span></td><td>${rec?.in||'-'}</td><td>${rec?.out||'-'}</td><td>${st}</td></tr>`;
+    }).join('');
+  }
+}
+
+// Tasks
+document.getElementById('btnAddTask').addEventListener('click', async () => {
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!title) { toast('업무 제목을 입력해주세요'); return; }
+  await addDoc(collection(db,'tasks'), {
+    assignTo: document.getElementById('taskAssignTo').value,
+    title,
+    desc: document.getElementById('taskDesc').value.trim(),
+    priority: document.getElementById('taskPriority').value,
+    due: document.getElementById('taskDue').value,
+    done: false,
+    by: currentUser,
+    date: today(),
+    createdAt: serverTimestamp()
+  });
+  document.getElementById('taskTitle').value = '';
+  document.getElementById('taskDesc').value = '';
+  toast('✅ 업무가 배정되었습니다');
+});
+
+function renderTasks() {
+  if (!currentUser) return;
+  if (isAdmin) {
+    document.getElementById('adminTaskForm').style.display = 'block';
+    document.getElementById('taskListTitle').textContent = '전체 업무 현황';
+  }
+  const myTasks = isAdmin ? tasksCache : tasksCache.filter(t => t.assignTo===currentUser || t.assignTo==='전체');
+  document.getElementById('taskCount').textContent = `${myTasks.length}건`;
+  const pLabel = {high:'높음', mid:'보통', low:'낮음'};
+  document.getElementById('taskList').innerHTML = myTasks.map(t => `
+    <div class="taskItem">
+      <div class="taskCheck ${t.done?'checked':''}" data-id="${t.id}"></div>
+      <div class="taskInfo">
+        <div class="taskTitle" style="${t.done?'text-decoration:line-through;color:var(--text3)':''}">${t.title}</div>
+        ${t.desc?`<div style="font-size:12px;color:var(--text2);margin:4px 0">${t.desc}</div>`:''}
+        <div class="taskMeta">
+          <span>👤 ${t.assignTo}</span>
+          ${t.due?`<span>📅 ${t.due}</span>`:''}
+          <span>✍️ ${t.by}</span>
+          <span class="taskPriority priority-${t.priority}">${pLabel[t.priority]||'보통'}</span>
+        </div>
+      </div>
+    </div>
+  `).join('') || '<div style="text-align:center;padding:40px;color:var(--text3)">배정된 업무가 없습니다</div>';
+
+  document.querySelectorAll('.taskCheck[data-id]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const t = tasksCache.find(t=>t.id===el.dataset.id);
+      if (t) await updateDoc(doc(db,'tasks',t.id), {done:!t.done});
+    });
+  });
+}
+
+// Files
+document.getElementById('btnUploadFile').addEventListener('click', async () => {
+  const name = document.getElementById('fileName').value.trim();
+  if (!name) { toast('파일명을 입력해주세요'); return; }
+  await addDoc(collection(db,'files'), {
+    name,
+    desc: document.getElementById('fileDesc').value.trim(),
+    assignTo: document.getElementById('fileAssignTo').value,
+    category: document.getElementById('fileCategory').value,
+    by: currentUser,
+    date: today(),
+    createdAt: serverTimestamp()
+  });
+  document.getElementById('fileName').value = '';
+  document.getElementById('fileDesc').value = '';
+  toast('📁 파일이 등록되었습니다');
+});
+
+document.getElementById('fileFilter').addEventListener('change', renderFiles);
+
+function renderFilesPanel() {
+  if (isAdmin) document.getElementById('fileUploadCard').style.display = 'block';
+  renderFiles();
+}
+
+function renderFiles() {
+  if (!currentUser) return;
+  const filter = document.getElementById('fileFilter').value;
+  const myFiles = isAdmin ? filesCache : filesCache.filter(f => f.assignTo===currentUser||f.assignTo==='전체');
+  const filtered = filter==='all' ? myFiles : myFiles.filter(f=>f.category===filter);
+  document.getElementById('fileListDisplay').innerHTML = filtered.map(f => `
+    <div class="fileItem">
+      <div class="fileItemIcon">${getFileIcon(f.name)}</div>
+      <div class="fileItemInfo">
+        <div class="fileItemName">${f.name}</div>
+        <div class="fileItemMeta">${f.desc?f.desc+' · ':''}${f.category} · ${f.assignTo==='전체'?'전체 공유':f.assignTo} · ${f.by} · ${f.date}</div>
+      </div>
+    </div>
+  `).join('') || '<div style="text-align:center;padding:40px;color:var(--text3)">파일이 없습니다</div>';
+}
+
+// Employees
+function renderEmployees() {
+  if (!isAdmin) return;
+  const td = today();
+  const working = employees.filter(e=>attendCache[e.name]?.[td]?.in && !attendCache[e.name]?.[td]?.out).length;
+  const done = employees.filter(e=>attendCache[e.name]?.[td]?.out).length;
+  const absent = employees.length - working - done;
+  const totalTasks = tasksCache.filter(t=>!t.done).length;
+
+  document.getElementById('dashStats').innerHTML = `
+    <div class="statCard"><div class="statLabel">전체 직원</div><div class="statValue" style="color:var(--accent)">${employees.length}명</div></div>
+    <div class="statCard"><div class="statLabel">현재 근무중</div><div class="statValue" style="color:var(--accent3)">${working}명</div></div>
+    <div class="statCard"><div class="statLabel">퇴근완료</div><div class="statValue" style="color:var(--text2)">${done}명</div></div>
+    <div class="statCard"><div class="statLabel">미출근</div><div class="statValue" style="color:var(--accent2)">${absent}명</div></div>
+    <div class="statCard"><div class="statLabel">미완료 업무</div><div class="statValue" style="color:var(--accent4)">${totalTasks}건</div></div>
+  `;
+
+  document.getElementById('empGrid').innerHTML = employees.map(emp => {
+    const rec = attendCache[emp.name]?.[td];
+    const online = rec?.in && !rec?.out;
+    const empTasks = tasksCache.filter(t=>(t.assignTo===emp.name||t.assignTo==='전체')&&!t.done).length;
+    return `
+      <div class="empCard">
+        <div class="empOnline ${online?'online':'offline'}"></div>
+        <div class="empAvatar" style="background:linear-gradient(135deg,${emp.color},${emp.color}88)">${emp.name[0]}</div>
+        <div class="empName">${emp.name}</div>
+        <div class="empPos">${emp.pos}</div>
+        <div style="font-size:11px;color:var(--text3)">미완료 업무 ${empTasks}건</div>
+        <div style="margin-top:8px">
+          ${rec?.in?`<span class="statusBadge ${rec?.out?'status-done':'status-active'}">${rec?.out?'퇴근':'근무중'}</span>`:'<span class="statusBadge status-away">미출근</span>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+</script>
+</body>
+</html>
